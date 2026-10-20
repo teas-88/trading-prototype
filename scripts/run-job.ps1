@@ -27,5 +27,8 @@ switch ($Job) {
         Invoke-Trader @("run", "trend-spy", "--execute")
         Invoke-Trader @("run", "swing-us-stocks", "--execute")
     }
-    "sync" { Invoke-Trader @("sync") }
+    "sync" {
+        Invoke-Trader @("sync")
+        Invoke-Trader @("report")
+    }
 }

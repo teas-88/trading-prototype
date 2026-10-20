@@ -17,6 +17,7 @@ uv run trader run trend-spy                           # dry run: print today's o
 uv run trader run trend-spy --execute                 # submit them to the paper account
 uv run trader wheel                                   # options wheel plan (dry run); --execute in US market hours
 uv run trader sync                                    # pull fills + option assignments/expiries into data/trades.db
+uv run trader report                                  # each strategy vs buy-and-hold SPY since it started
 uv run trader export                                  # CSV of all fills, incl. AUD values
 uv run pytest
 ```
@@ -33,7 +34,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install-tasks.ps1          # re
 powershell -ExecutionPolicy Bypass -File scripts/install-tasks.ps1 -Remove  # unregister
 ```
 
-Tue-Sat, Sydney time: 05:00 `wheel --execute`, 09:00 `run trend-spy` + `run swing-us-stocks --execute`, 09:30 `sync`.
+Tue-Sat, Sydney time: 05:00 `wheel --execute`, 09:00 `run trend-spy` + `run swing-us-stocks --execute`, 09:30 `sync` + `report`.
 Output goes to `data/logs/<date>-<job>.log`. Tasks run while you're logged in (a locked screen is fine; keep the PC
 plugged in with sleep off) and catch up after a missed run.
 

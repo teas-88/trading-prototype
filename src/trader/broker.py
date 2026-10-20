@@ -4,8 +4,10 @@ strategy code."""
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import Protocol
+
+import pandas as pd
 
 from trader.options import OptionQuote, parse_occ
 
@@ -50,6 +52,7 @@ class Broker(Protocol):
     def option_snapshots(self, symbols: list[str]) -> dict[str, OptionQuote]: ...
     def filled_orders(self, since: datetime) -> list[Fill]: ...
     def option_events(self, since: datetime) -> list[dict]: ...
+    def equity_history(self, since: date) -> pd.Series: ...
 
 
 def _tag(strategy: str) -> str:
@@ -163,3 +166,14 @@ class AlpacaBroker:
         must be logged separately for tax. Returned raw; the format is Alpaca's."""
         return list(self.client.get("/account/activities", {
             "activity_types": "OPASN,OPEXC,OPEXP", "after": since.isoformat()}) or [])
+
+    def equity_history(self, since: date) -> pd.Series:
+        """Daily account equity from `since`, indexed by date."""
+        from alpaca.trading.requests import GetPortfolioHistoryRequest
+
+        # Alpaca rejects a start after the last completed session, so ask from a week earlier.
+        h = self.client.get_portfolio_history(GetPortfolioHistoryRequest(
+            start=datetime.combine(since - timedelta(days=7), time()), timeframe="1D"))
+        s = pd.Series(h.equity, index=pd.to_datetime(h.timestamp, unit="s").normalize(), dtype=float)
+        s = s[s > 0]  # zeros are days before the paper account was funded
+        return s[s.index >= pd.Timestamp(since)]
