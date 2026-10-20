@@ -166,3 +166,10 @@ def test_baseline_recorded_once(tmp_path):
     log = TradeLog(tmp_path / "t.db", fx=lambda ccy, day: 1.0)
     assert log.baseline("alpaca:x", 100.0) == 100.0
     assert log.baseline("alpaca:x", 150.0) == 100.0
+
+
+def test_plan_orders_uses_broker_price_when_data_missing():
+    positions = {"A": Position("A", 100, 5000.0)}  # broker values A at $50
+    orders = plan_orders({"A": 0.2}, ["A"], 10_000, positions, last_price={})
+    assert orders[0].side == "sell"
+    assert orders[0].qty == pytest.approx((5000 - 10_000 * 0.2 * (1 - CASH_BUFFER)) / 50)

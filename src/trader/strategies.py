@@ -127,21 +127,22 @@ class MeanReversionSwing(Strategy):
         return self.trend_sma_days + 20
 
     def target_weights(self, prices, current):
-        recent = prices[list(self.universe)].iloc[-(self.trend_sma_days + 50):]
+        # Slice rows before columns: selecting columns first copies the whole history daily.
+        recent = prices.iloc[-(self.trend_sma_days + 50):][list(self.universe)]
+        enough = recent.notna().sum() >= self.trend_sma_days
+        recent = recent.ffill()
+        close = recent.iloc[-1]
+        in_uptrend = enough & (close > recent.iloc[-self.trend_sma_days:].mean())
+        bounced = close > recent.iloc[-self.exit_sma_days:].mean()
+        latest_rsi = rsi(recent, self.rsi_days).iloc[-1]
+
         target, candidates = {}, []
         for s in self.universe:
-            p = recent[s].dropna()
-            if len(p) < self.trend_sma_days:
-                continue
-            close = p.iloc[-1]
-            in_uptrend = close > p.iloc[-self.trend_sma_days:].mean()
             if current.get(s, 0) > 0:
-                if in_uptrend and close <= p.iloc[-self.exit_sma_days:].mean():
+                if in_uptrend[s] and not bounced[s]:
                     target[s] = current[s]  # still waiting for the bounce: hold as-is
-                continue
-            r = rsi(p, self.rsi_days).iloc[-1]
-            if in_uptrend and r < self.entry_rsi:
-                candidates.append((r, s))
+            elif in_uptrend[s] and latest_rsi[s] < self.entry_rsi:
+                candidates.append((latest_rsi[s], s))
 
         room = 1.0 - sum(target.values())
         for _, s in sorted(candidates)[: self.max_positions - len(target)]:
@@ -153,10 +154,25 @@ class MeanReversionSwing(Strategy):
         return target
 
 
+# Roughly the S&P 100 as of 2026 (BRK.B left out: Yahoo and Alpaca spell it differently).
+# Using today's members in backtests flatters results (survivorship bias): companies that
+# shrank or failed since 2006 aren't in the list. Paper trading is the honest test.
+US_LARGE_CAPS = (
+    "AAPL", "ABBV", "ABT", "ACN", "ADBE", "AIG", "AMD", "AMGN", "AMT", "AMZN", "AVGO", "AXP", "BA", "BAC",
+    "BK", "BKNG", "BLK", "BMY", "C", "CAT", "CHTR", "CL", "CMCSA", "COF", "COP", "COST", "CRM", "CSCO",
+    "CVS", "CVX", "DE", "DHR", "DIS", "DUK", "EMR", "F", "FDX", "GD", "GE", "GILD", "GM", "GOOGL", "GS",
+    "HD", "HON", "IBM", "INTC", "INTU", "ISRG", "JNJ", "JPM", "KHC", "KO", "LIN", "LLY", "LMT", "LOW",
+    "MA", "MCD", "MDLZ", "MDT", "MET", "META", "MMM", "MO", "MRK", "MS", "MSFT", "NEE", "NFLX", "NKE",
+    "NOW", "NVDA", "ORCL", "PEP", "PFE", "PG", "PLTR", "PM", "PYPL", "QCOM", "RTX", "SBUX", "SCHW", "SO",
+    "SPG", "T", "TGT", "TMO", "TMUS", "TSLA", "TXN", "UNH", "UNP", "UPS", "USB", "V", "VZ", "WFC", "WMT",
+    "XOM",
+)
+
 STRATEGIES = {
     "trend-spy": lambda: TrendFollowing("SPY"),
     "momentum-us": lambda: MomentumRotation(),
     "swing-us": lambda: MeanReversionSwing(),
+    "swing-us-stocks": lambda: MeanReversionSwing(universe=US_LARGE_CAPS, label="us-stocks"),
     # Backtest only: Alpaca can't trade ASX. Today's largest stocks -> survivorship bias.
     "trend-asx": lambda: TrendFollowing("VAS.AX"),
     "swing-asx": lambda: MeanReversionSwing(
