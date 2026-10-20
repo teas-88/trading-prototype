@@ -1,0 +1,22 @@
+[project]
+name = "trader"
+version = "0.1.0"
+description = "Rules-based trading prototype: backtest, paper trade, log fills for tax."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "alpaca-py>=0.30",
+    "pandas>=2.2",
+    "python-dotenv>=1.0",
+    "yfinance>=0.2.50",
+]
+
+[project.scripts]
+trader = "trader.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

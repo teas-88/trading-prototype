@@ -1,6 +1,7 @@
 # Secrets - never commit
 .env
 .env.*
+!.env.example
 *.key
 secrets/
 
@@ -18,3 +19,6 @@ node_modules/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local data (trade log DB, exports) - back up separately, keep out of git
+data/
