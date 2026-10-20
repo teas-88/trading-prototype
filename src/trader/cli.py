@@ -73,6 +73,20 @@ def cmd_wheel(args):
               dry_run=not args.execute, capital=account.capital)
 
 
+def cmd_report(args):
+    from trader.report import build_report
+    from trader.tradelog import TradeLog
+    from trader.wheel import NAME as WHEEL
+
+    settings = config.load()
+    wheel_account = settings.account_for(WHEEL)
+    accounts = []
+    for account in settings.accounts.values():
+        label = f"{WHEEL} ({account.name})" if wheel_account and account.name == wheel_account.name else account.name
+        accounts.append((label, _broker(settings, account, allow_live=True), account.capital))
+    print(build_report(accounts, TradeLog(settings.db_path)))
+
+
 def cmd_export(args):
     from trader.tradelog import TradeLog
 
@@ -106,6 +120,9 @@ def main():
     s = sub.add_parser("sync", help="pull filled orders from the broker into the trade log")
     s.add_argument("--days", type=int, default=30)
     s.set_defaults(func=cmd_sync)
+
+    rp = sub.add_parser("report", help="performance of each strategy account vs buy-and-hold SPY")
+    rp.set_defaults(func=cmd_report)
 
     e = sub.add_parser("export", help="export the trade log to CSV")
     e.add_argument("--out", default=f"data/fills-{date.today()}.csv")
