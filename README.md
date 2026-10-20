@@ -38,6 +38,11 @@ Tue-Sat, Sydney time: 05:00 `wheel --execute`, 09:00 `run trend-spy` + `run swin
 Output goes to `data/logs/<date>-<job>.log`. Tasks run while you're logged in (a locked screen is fine; keep the PC
 plugged in with sleep off) and catch up after a missed run.
 
+Alerts: a failed command, or a 05:00/09:00 job that didn't run by 09:30, raises a Windows notification and is logged to
+`data/logs/alerts.log`. Set `NTFY_TOPIC` in `.env` to also get them (plus a daily P&L line) on your phone via the ntfy
+app. Test with `powershell -ExecutionPolicy Bypass -File scripts/run-job.ps1 -Job test-alert`. If the laptop is off
+entirely nothing can alert; an external heartbeat (e.g. healthchecks.io) would cover that.
+
 ## Layout
 
 | Module | Role |
