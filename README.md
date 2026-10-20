@@ -15,12 +15,16 @@ Personal trading prototype: a rules-based core that backtests, paper trades on A
 uv run trader backtest trend-spy --start 2010-01-01   # vs buy-and-hold; also momentum-us, swing-us, trend-asx, swing-asx
 uv run trader run trend-spy                           # dry run: print today's orders
 uv run trader run trend-spy --execute                 # submit them to the paper account
-uv run trader sync                                    # pull fills from every account into data/trades.db
+uv run trader wheel                                   # options wheel plan (dry run); --execute in US market hours
+uv run trader sync                                    # pull fills + option assignments/expiries into data/trades.db
 uv run trader export                                  # CSV of all fills, incl. AUD values
 uv run pytest
 ```
 
 Run `run` while the US market is closed (Australian morning), so signals use a final daily close. Orders queue and fill at the next US open. Run `sync` afterwards.
+
+The wheel is different: option quotes are only meaningful while the US market is open (about 00:30-07:00 AEDT),
+so `wheel --execute` refuses to trade when it's closed. Each run cancels unfilled orders from the previous run and re-plans.
 
 ## Layout
 
@@ -31,7 +35,9 @@ Run `run` while the US market is closed (Australian morning), so signals use a f
 | `portfolio.py` | rebalancing rule (drift tolerance) shared by backtest and live |
 | `broker.py` | broker interface plus Alpaca adapter (an IBKR adapter for ASX goes here) |
 | `live.py` | diffs the target against the account, plans and submits orders, syncs fills |
-| `tradelog.py` | SQLite fill log with AUD conversion; CSV export |
+| `options.py` | OCC symbols, option quotes, contract selection by delta/DTE/spread |
+| `wheel.py` | options wheel: cash-secured puts, covered calls above cost basis, 50% take-profit |
+| `tradelog.py` | SQLite fill log with AUD conversion (x100 for options), option events; CSV export |
 
 ## Notes
 
@@ -40,4 +46,6 @@ Run `run` while the US market is closed (Australian morning), so signals use a f
 - Live trading needs both `ALPACA_PAPER=false` and `--live`.
 - `data/` (the trade log) is git-ignored. Back it up separately.
 - Data comes from yfinance (free, unofficial). Use a proper feed before trading real money.
+- The wheel has no backtest (historical option quotes aren't free), so it's validated by forward paper trading.
+  When a written put is assigned the premium generally adjusts the shares' cost base; confirm treatment with an accountant.
 - Backtests assume cash earns 0%, which slightly understates the strategies that sit in cash.

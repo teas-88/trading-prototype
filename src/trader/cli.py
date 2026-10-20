@@ -57,8 +57,20 @@ def cmd_sync(args):
     settings = config.load()
     log = TradeLog(settings.db_path)
     for account in settings.accounts.values():
-        added = sync_fills(_broker(settings, account, allow_live=True), log, days=args.days)
-        print(f"{account.name}: logged {added} new fill(s) to {settings.db_path}")
+        fills, events = sync_fills(_broker(settings, account, allow_live=True), log, days=args.days)
+        print(f"{account.name}: logged {fills} new fill(s), {events} option event(s) to {settings.db_path}")
+
+
+def cmd_wheel(args):
+    from trader.tradelog import TradeLog
+    from trader.wheel import NAME, WheelConfig, run_wheel
+
+    settings = config.load()
+    account = settings.account_for(NAME)
+    if account is None:
+        sys.exit("No Alpaca keys in .env (see .env.example)")
+    run_wheel(WheelConfig(), _broker(settings, account, args.live), TradeLog(settings.db_path),
+              dry_run=not args.execute, capital=account.capital)
 
 
 def cmd_export(args):
@@ -85,6 +97,11 @@ def main():
     r.add_argument("--execute", action="store_true", help="actually submit orders")
     r.add_argument("--live", action="store_true", help="required in addition to ALPACA_PAPER=false")
     r.set_defaults(func=cmd_run)
+
+    w = sub.add_parser("wheel", help="options wheel: plan puts/calls (dry run unless --execute)")
+    w.add_argument("--execute", action="store_true", help="actually submit orders (US market hours only)")
+    w.add_argument("--live", action="store_true", help="required in addition to ALPACA_PAPER=false")
+    w.set_defaults(func=cmd_wheel)
 
     s = sub.add_parser("sync", help="pull filled orders from the broker into the trade log")
     s.add_argument("--days", type=int, default=30)
