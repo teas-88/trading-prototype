@@ -29,8 +29,8 @@ so `wheel --execute` refuses to trade when it's closed. Each run cancels unfille
 ## Scheduling (Windows)
 
 ```
-powershell -ExecutionPolicy Bypass -File scripts\install-tasks.ps1          # register (re-run to update)
-powershell -ExecutionPolicy Bypass -File scripts\install-tasks.ps1 -Remove  # unregister
+powershell -ExecutionPolicy Bypass -File scripts/install-tasks.ps1          # register (re-run to update)
+powershell -ExecutionPolicy Bypass -File scripts/install-tasks.ps1 -Remove  # unregister
 ```
 
 Tue-Sat, Sydney time: 05:00 `wheel --execute`, 09:00 `run trend-spy` + `run swing-us-stocks --execute`, 09:30 `sync`.
