@@ -26,6 +26,17 @@ Run `run` while the US market is closed (Australian morning), so signals use a f
 The wheel is different: option quotes are only meaningful while the US market is open (about 00:30-07:00 AEDT),
 so `wheel --execute` refuses to trade when it's closed. Each run cancels unfilled orders from the previous run and re-plans.
 
+## Scheduling (Windows)
+
+```
+powershell -ExecutionPolicy Bypass -File scripts\install-tasks.ps1          # register (re-run to update)
+powershell -ExecutionPolicy Bypass -File scripts\install-tasks.ps1 -Remove  # unregister
+```
+
+Tue-Sat, Sydney time: 05:00 `wheel --execute`, 09:00 `run trend-spy` + `run swing-us-stocks --execute`, 09:30 `sync`.
+Output goes to `data/logs/<date>-<job>.log`. Tasks run while you're logged in (a locked screen is fine; keep the PC
+plugged in with sleep off) and catch up after a missed run.
+
 ## Layout
 
 | Module | Role |
