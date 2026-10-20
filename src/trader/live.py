@@ -44,7 +44,9 @@ def plan_orders(target: dict[str, float], universe: list[str], equity: float,
             sells.append(PlannedOrder(symbol, "sell", positions[symbol].qty, close_all=True))
             continue
         delta = (want - have) * equity
-        order = PlannedOrder(symbol, "buy" if delta > 0 else "sell", abs(delta) / last_price[symbol])
+        pos = positions.get(symbol)
+        price = last_price.get(symbol) or pos.market_value / pos.qty
+        order = PlannedOrder(symbol, "buy" if delta > 0 else "sell", abs(delta) / price)
         (buys if delta > 0 else sells).append(order)
     return sells + buys
 
@@ -62,7 +64,12 @@ def run_once(strategy: Strategy, broker: Broker, log: TradeLog, dry_run: bool = 
              capital: float | None = None) -> list[PlannedOrder]:
     lookback = max(730, strategy.warmup_days * 2)
     prices = load_prices(strategy.symbols, start=date.today() - timedelta(days=lookback))
-    last_price = {s: float(prices[s].dropna().iloc[-1]) for s in strategy.symbols}
+    # A symbol can come back empty (bad download); strategies skip it, and we fall back to
+    # the broker's own valuation if we need to trim a position in it.
+    last_price = {s: float(prices[s].dropna().iloc[-1]) for s in strategy.symbols if prices[s].notna().any()}
+    missing = set(strategy.symbols) - set(last_price)
+    if missing:
+        print(f"Warning: no price data for {sorted(missing)}")
 
     positions = broker.positions()
     account_equity = broker.equity()
