@@ -97,6 +97,9 @@ def run_once(strategy: Strategy, broker: Broker, log: TradeLog, dry_run: bool = 
     return orders
 
 
-def sync_fills(broker: Broker, log: TradeLog, days: int = 30) -> int:
+def sync_fills(broker: Broker, log: TradeLog, days: int = 30) -> tuple[int, int]:
+    """Returns (new fills, new option events) logged."""
     since = datetime.now(timezone.utc) - pd.Timedelta(days=days)
-    return sum(log.record(f, broker.name, broker.paper) for f in broker.filled_orders(since))
+    fills = sum(log.record(f, broker.name, broker.paper) for f in broker.filled_orders(since))
+    events = sum(log.record_option_event(broker.name, e) for e in broker.option_events(since))
+    return fills, events

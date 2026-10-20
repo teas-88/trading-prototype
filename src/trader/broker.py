@@ -1,10 +1,13 @@
-"""Broker interface. Strategies never talk to a broker directly; only live.py does, through
-this interface, so an IBKR adapter (for ASX) can be added without touching strategy code."""
+"""Broker interface. Strategies never talk to a broker directly; only live.py and wheel.py
+do, through this interface, so an IBKR adapter (for ASX) can be added without touching
+strategy code."""
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Protocol
+
+from trader.options import OptionQuote, parse_occ
 
 # client_order_id = "<strategy>--<random>", which lets us attribute fills to strategies later
 TAG_SEP = "--"
@@ -13,8 +16,9 @@ TAG_SEP = "--"
 @dataclass(frozen=True)
 class Position:
     symbol: str
-    qty: float
+    qty: float  # negative for short options
     market_value: float
+    avg_entry_price: float = 0.0  # per share; for options, the premium per share
 
 
 @dataclass(frozen=True)
@@ -28,6 +32,7 @@ class Fill:
     fees: float
     currency: str
     filled_at: datetime  # UTC
+    multiplier: int = 1  # 100 for option contracts
 
 
 class Broker(Protocol):
@@ -37,23 +42,43 @@ class Broker(Protocol):
     def equity(self) -> float: ...
     def positions(self) -> dict[str, Position]: ...
     def submit_market_order(self, symbol: str, qty: float, side: str, strategy: str) -> str: ...
+    def submit_limit_order(self, symbol: str, qty: int, side: str, limit: float, strategy: str) -> str: ...
     def close_position(self, symbol: str) -> str: ...
+    def cancel_open_orders(self) -> None: ...
+    def market_open(self) -> bool: ...
+    def option_quotes(self, underlying: str, expiry_from: date, expiry_to: date) -> list[OptionQuote]: ...
+    def option_snapshots(self, symbols: list[str]) -> dict[str, OptionQuote]: ...
     def filled_orders(self, since: datetime) -> list[Fill]: ...
+    def option_events(self, since: datetime) -> list[dict]: ...
+
+
+def _tag(strategy: str) -> str:
+    return f"{strategy}{TAG_SEP}{uuid.uuid4().hex[:12]}"
+
+
+def _quote(symbol: str, snap) -> OptionQuote | None:
+    contract, q = parse_occ(symbol), snap.latest_quote
+    if contract is None or q is None:
+        return None
+    return OptionQuote(contract, float(q.bid_price or 0), float(q.ask_price or 0),
+                       snap.greeks.delta if snap.greeks else None)
 
 
 class AlpacaBroker:
     def __init__(self, key: str, secret: str, paper: bool = True, account: str = "default"):
+        from alpaca.data.historical.option import OptionHistoricalDataClient
         from alpaca.trading.client import TradingClient
 
         self.name = f"alpaca:{account}"
         self.paper = paper
         self.client = TradingClient(key, secret, paper=paper)
+        self.options_data = OptionHistoricalDataClient(key, secret)
 
     def equity(self) -> float:
         return float(self.client.get_account().equity)
 
     def positions(self) -> dict[str, Position]:
-        return {p.symbol: Position(p.symbol, float(p.qty), float(p.market_value))
+        return {p.symbol: Position(p.symbol, float(p.qty), float(p.market_value), float(p.avg_entry_price))
                 for p in self.client.get_all_positions()}
 
     def submit_market_order(self, symbol: str, qty: float, side: str, strategy: str) -> str:
@@ -65,15 +90,50 @@ class AlpacaBroker:
             qty=round(qty, 4),  # fractional shares; outside market hours this queues for the open
             side=OrderSide.BUY if side == "buy" else OrderSide.SELL,
             time_in_force=TimeInForce.DAY,
-            client_order_id=f"{strategy}{TAG_SEP}{uuid.uuid4().hex[:12]}",
+            client_order_id=_tag(strategy),
+        ))
+        return str(order.id)
+
+    def submit_limit_order(self, symbol: str, qty: int, side: str, limit: float, strategy: str) -> str:
+        from alpaca.trading.enums import OrderSide, TimeInForce
+        from alpaca.trading.requests import LimitOrderRequest
+
+        order = self.client.submit_order(LimitOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.BUY if side == "buy" else OrderSide.SELL,
+            time_in_force=TimeInForce.DAY,
+            limit_price=limit,
+            client_order_id=_tag(strategy),
         ))
         return str(order.id)
 
     def close_position(self, symbol: str) -> str:
         return str(self.client.close_position(symbol).id)
 
+    def cancel_open_orders(self) -> None:
+        self.client.cancel_orders()
+
+    def market_open(self) -> bool:
+        return self.client.get_clock().is_open
+
+    def option_quotes(self, underlying: str, expiry_from: date, expiry_to: date) -> list[OptionQuote]:
+        from alpaca.data.requests import OptionChainRequest
+
+        chain = self.options_data.get_option_chain(OptionChainRequest(
+            underlying_symbol=underlying, expiration_date_gte=expiry_from, expiration_date_lte=expiry_to))
+        return [q for sym, snap in chain.items() if (q := _quote(sym, snap))]
+
+    def option_snapshots(self, symbols: list[str]) -> dict[str, OptionQuote]:
+        from alpaca.data.requests import OptionSnapshotRequest
+
+        if not symbols:
+            return {}
+        snaps = self.options_data.get_option_snapshot(OptionSnapshotRequest(symbol_or_symbols=symbols))
+        return {sym: q for sym, snap in snaps.items() if (q := _quote(sym, snap))}
+
     def filled_orders(self, since: datetime) -> list[Fill]:
-        from alpaca.trading.enums import QueryOrderStatus
+        from alpaca.trading.enums import AssetClass, QueryOrderStatus
         from alpaca.trading.requests import GetOrdersRequest
 
         orders = self.client.get_orders(GetOrdersRequest(status=QueryOrderStatus.CLOSED, after=since, limit=500))
@@ -94,5 +154,12 @@ class AlpacaBroker:
                 fees=0.0,
                 currency="USD",
                 filled_at=o.filled_at,
+                multiplier=100 if o.asset_class == AssetClass.US_OPTION else 1,
             ))
         return fills
+
+    def option_events(self, since: datetime) -> list[dict]:
+        """Assignments, exercises and expiries. These move shares without an order, so they
+        must be logged separately for tax. Returned raw; the format is Alpaca's."""
+        return list(self.client.get("/account/activities", {
+            "activity_types": "OPASN,OPEXC,OPEXP", "after": since.isoformat()}) or [])
